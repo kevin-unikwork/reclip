@@ -24,6 +24,7 @@ def init_cookies_from_env():
         try:
             with open(os.path.join(COOKIES_DIR, "youtube.txt"), "w", encoding="utf-8") as f:
                 f.write(youtube_cookies_env.strip() + "\n")
+            print(f"Successfully wrote cookies/youtube.txt ({len(youtube_cookies_env)} bytes)")
         except Exception as e:
             print(f"Error writing youtube cookies: {e}")
 
@@ -32,6 +33,7 @@ def init_cookies_from_env():
         try:
             with open(os.path.join(COOKIES_DIR, "instagram.txt"), "w", encoding="utf-8") as f:
                 f.write(instagram_cookies_env.strip() + "\n")
+            print(f"Successfully wrote cookies/instagram.txt ({len(instagram_cookies_env)} bytes)")
         except Exception as e:
             print(f"Error writing instagram cookies: {e}")
 
