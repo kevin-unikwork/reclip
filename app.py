@@ -67,6 +67,48 @@ def init_cookies_from_env():
 
 init_cookies_from_env()
 
+GIST_CACHE_TTL = 300  # 5 minutes cache
+last_gist_fetch = 0
+
+
+def refresh_cookies_from_gist():
+    global last_gist_fetch
+    gist_url = os.environ.get("YTDLP_COOKIES_GIST_URL")
+    if not gist_url:
+        return
+
+    now = time.time()
+    if now - last_gist_fetch < GIST_CACHE_TTL:
+        return
+
+    try:
+        import requests
+        r = requests.get(gist_url, timeout=10)
+        if r.status_code == 200:
+            content = r.text.strip()
+            # Apply space-to-tab auto-repair
+            lines = content.split("\n")
+            formatted_lines = []
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    formatted_lines.append(line)
+                    continue
+                if "\t" not in line:
+                    parts = line.split()
+                    if len(parts) >= 7:
+                        line = "\t".join(parts[:6]) + "\t" + " ".join(parts[6:])
+                formatted_lines.append(line)
+            repaired_content = "\n".join(formatted_lines) + "\n"
+
+            with open(os.path.join(COOKIES_DIR, "youtube.txt"), "w", encoding="utf-8") as f:
+                f.write(repaired_content)
+            last_gist_fetch = now
+            print(f"Successfully refreshed cookies from Gist ({len(repaired_content)} bytes)")
+    except Exception as e:
+        print(f"Error fetching cookies from Gist: {e}")
+
+
 jobs = {}
 info_cache = {}
 INFO_CACHE_TTL = 3600
@@ -99,6 +141,10 @@ def get_platform(url):
 
 
 def get_cookies_file(url):
+    # Try refreshing from Gist if URL is configured
+    if get_platform(url) == "youtube" and os.environ.get("YTDLP_COOKIES_GIST_URL"):
+        refresh_cookies_from_gist()
+
     env_cookies_file = os.environ.get("YTDLP_COOKIES_FILE")
     if env_cookies_file and os.path.exists(env_cookies_file):
         return env_cookies_file
