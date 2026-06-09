@@ -236,7 +236,8 @@ def run_download(job_id, url, format_choice, format_id):
         wait_for_platform_cooldown(platform)
 
         result = run_yt_dlp_with_retries(cmd, timeout=300, platform=platform)
-        if result.returncode != 0:
+        is_cloud = os.environ.get("RENDER") or os.environ.get("YTDLP_PROXY")
+        if result.returncode != 0 and not is_cloud:
             # Try fallback run
             cmd_fallback = build_yt_dlp_cmd(url, "-o", out_template, use_fallback=True)
             if format_choice == "audio":
@@ -316,7 +317,8 @@ def get_info():
     try:
         wait_for_platform_cooldown(platform)
         result = run_yt_dlp_with_retries(cmd, timeout=35, platform=platform, max_attempts=1)
-        if result.returncode != 0:
+        is_cloud = os.environ.get("RENDER") or os.environ.get("YTDLP_PROXY")
+        if result.returncode != 0 and not is_cloud:
             # Fallback retry
             cmd_fallback = build_yt_dlp_cmd(url, "-j", url, use_fallback=True)
             result = run_yt_dlp_with_retries(cmd_fallback, timeout=35, platform=platform, max_attempts=1)
