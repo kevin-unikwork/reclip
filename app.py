@@ -136,23 +136,6 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
 
     is_cloud = os.environ.get("RENDER") or proxy
 
-    if platform == "youtube":
-        if is_cloud or use_fallback:
-            if cookies_file:
-                # With cookies: use the standard web client with full webpage access.
-                # yt-dlp needs to load the page to extract the PO (Proof of Origin)
-                # token from the authenticated session.
-                cmd += [
-                    "--extractor-args",
-                    "youtube:player_client=web,mweb,web_embedded",
-                ]
-            else:
-                # Without cookies: use mobile clients that don't require PO tokens.
-                cmd += [
-                    "--extractor-args",
-                    "youtube:player_client=mweb,web_embedded;player_skip=webpage,configs",
-                ]
-
     if cookies_file and (is_cloud or use_fallback or os.environ.get("YTDLP_COOKIES_FILE")):
         cmd += ["--cookies", cookies_file]
     cmd += list(extra_args)
