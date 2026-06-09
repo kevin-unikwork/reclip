@@ -69,7 +69,7 @@ init_cookies_from_env()
 
 jobs = {}
 info_cache = {}
-INFO_CACHE_TTL = 300
+INFO_CACHE_TTL = 3600
 INFO_TO_DOWNLOAD_GAP_SECONDS = 8
 PLATFORM_LOCKS = {
     "youtube": threading.Semaphore(1),
@@ -150,6 +150,8 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
         "--no-playlist",
         "--js-runtimes", "node",
         "--remote-components", "ejs:github",
+        "-N", "5",
+        "--http-chunk-size", "10M",
         "--user-agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
     ]
