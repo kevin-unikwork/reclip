@@ -121,6 +121,7 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
     cmd = [
         get_ytdlp_executable(),
         "--no-playlist",
+        "--js-runtimes", "node",
         "--user-agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
     ]
@@ -135,6 +136,12 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
     cookies_file = get_cookies_file(url)
 
     is_cloud = os.environ.get("RENDER") or proxy
+
+    if platform == "youtube":
+        cmd += [
+            "--extractor-args",
+            "youtube:player_client=default,-android_sdkless",
+        ]
 
     if cookies_file and (is_cloud or use_fallback or os.environ.get("YTDLP_COOKIES_FILE")):
         cmd += ["--cookies", cookies_file]
