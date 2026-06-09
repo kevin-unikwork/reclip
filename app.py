@@ -302,42 +302,36 @@ def index():
     return render_template("index.html")
 
 
-@app.route("/api/info", methods=["POST"])
-def get_info():
-    data = request.json
-    url = data.get("url", "").strip()
-    if not url:
-        return jsonify({"error": "No URL provided"}), 400
-
-    cached = info_cache.get(url)
-    now = time.time()
-    if cached and now - cached["timestamp"] < INFO_CACHE_TTL:
-        return jsonify(cached["data"])
-
+def run_fetch_info(job_id, url):
+    job = jobs[job_id]
     platform = get_platform(url)
     cmd = build_yt_dlp_cmd(url, "-j", url, use_fallback=False)
     try:
         wait_for_platform_cooldown(platform)
-        result = run_yt_dlp_with_retries(cmd, timeout=35, platform=platform, max_attempts=1)
+        result = run_yt_dlp_with_retries(cmd, timeout=45, platform=platform, max_attempts=1)
         is_cloud = os.environ.get("RENDER") or os.environ.get("YTDLP_PROXY")
         if result.returncode != 0 and not is_cloud:
-            # Fallback retry
             cmd_fallback = build_yt_dlp_cmd(url, "-j", url, use_fallback=True)
-            result = run_yt_dlp_with_retries(cmd_fallback, timeout=35, platform=platform, max_attempts=1)
+            result = run_yt_dlp_with_retries(cmd_fallback, timeout=45, platform=platform, max_attempts=1)
 
         if result.returncode != 0:
-            return jsonify({"error": result.stderr.strip() or "yt-dlp failed"}), 400
+            job["status"] = "error"
+            job["error"] = result.stderr.strip() or "yt-dlp failed"
+            return
 
         stdout = (result.stdout or "").strip()
         if not stdout:
-            return jsonify({"error": "yt-dlp returned no metadata"}), 400
+            job["status"] = "error"
+            job["error"] = "yt-dlp returned no metadata"
+            return
 
         try:
             info = json.loads(stdout)
         except json.JSONDecodeError:
-            return jsonify({"error": "yt-dlp returned invalid metadata"}), 400
+            job["status"] = "error"
+            job["error"] = "yt-dlp returned invalid metadata"
+            return
 
-        # Build quality options — keep best format per resolution
         best_by_height = {}
         for f in info.get("formats", []):
             height = f.get("height")
@@ -362,13 +356,35 @@ def get_info():
             "uploader": info.get("uploader", ""),
             "formats": formats,
         }
-        info_cache[url] = {"timestamp": now, "data": response_data}
-
-        return jsonify(response_data)
-    except subprocess.TimeoutExpired:
-        return jsonify({"error": "Timed out fetching video info"}), 400
+        info_cache[url] = {"timestamp": time.time(), "data": response_data}
+        
+        job["status"] = "info_ready"
+        job["info"] = response_data
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        job["status"] = "error"
+        job["error"] = str(e)
+
+
+@app.route("/api/info", methods=["POST"])
+def get_info():
+    data = request.json
+    url = data.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+
+    cached = info_cache.get(url)
+    now = time.time()
+    if cached and now - cached["timestamp"] < INFO_CACHE_TTL:
+        return jsonify({"status": "info_ready", "info": cached["data"]})
+
+    job_id = uuid.uuid4().hex[:10]
+    jobs[job_id] = {"status": "fetching_info", "url": url}
+
+    thread = threading.Thread(target=run_fetch_info, args=(job_id, url))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({"job_id": job_id})
 
 
 @app.route("/api/download", methods=["POST"])
@@ -401,6 +417,7 @@ def check_status(job_id):
         "status": job["status"],
         "error": job.get("error"),
         "filename": job.get("filename"),
+        "info": job.get("info"),
     })
 
 

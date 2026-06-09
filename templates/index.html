@@ -473,6 +473,13 @@
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); go(); }
     });
 
+    function checkEnableGoButton() {
+      const btn = document.getElementById('goBtn');
+      const isAnyLoading = cardData.some(c => c.status === 'loading' || c.status === 'fetching_info' || c.status === 'downloading');
+      btn.disabled = isAnyLoading;
+      btn.textContent = isAnyLoading ? 'Loading...' : 'Fetch';
+    }
+
     async function go() {
       const urls = parseUrls(document.getElementById('urls').value);
       if (!urls.length) return;
@@ -499,30 +506,65 @@
           const data = await readJsonOrError(res);
           if (data.error) {
             cardData[idx] = { ...cardData[idx], status: 'info-error', error: data.error };
-          } else {
+            renderCard(idx);
+          } else if (data.status === 'info_ready') {
             cardData[idx] = {
               ...cardData[idx],
               status: 'ready',
-              title: data.title || '',
-              thumbnail: data.thumbnail || '',
-              duration: data.duration,
-              uploader: data.uploader || '',
-              formats: data.formats || [],
-              selectedFormatId: data.formats?.[0]?.id || null,
+              title: data.info.title || '',
+              thumbnail: data.info.thumbnail || '',
+              duration: data.info.duration,
+              uploader: data.info.uploader || '',
+              formats: data.info.formats || [],
+              selectedFormatId: data.info.formats?.[0]?.id || null,
             };
+            renderCard(idx);
+          } else {
+            cardData[idx].status = 'fetching_info';
+            cardData[idx].jobId = data.job_id;
+            pollInfoJob(idx, data.job_id);
           }
         } catch (err) {
           cardData[idx] = { ...cardData[idx], status: 'info-error', error: err.message };
+          renderCard(idx);
         }
-        renderCard(idx);
       }
+      checkEnableGoButton();
+    }
 
-      if (cardData.filter(c => c.status === 'ready').length > 1) {
-        renderDownloadAll();
-      }
-
-      btn.disabled = false;
-      btn.textContent = 'Fetch';
+    function pollInfoJob(idx, jobId) {
+      const c = cardData[idx];
+      const iv = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/status/${jobId}`);
+          const data = await readJsonOrError(res);
+          if (data.status === 'info_ready') {
+            clearInterval(iv);
+            cardData[idx] = {
+              ...cardData[idx],
+              status: 'ready',
+              title: data.info.title || '',
+              thumbnail: data.info.thumbnail || '',
+              duration: data.info.duration,
+              uploader: data.info.uploader || '',
+              formats: data.info.formats || [],
+              selectedFormatId: data.info.formats?.[0]?.id || null,
+            };
+            renderCard(idx);
+            checkEnableGoButton();
+          } else if (data.status === 'error') {
+            clearInterval(iv);
+            cardData[idx] = { ...cardData[idx], status: 'info-error', error: data.error };
+            renderCard(idx);
+            checkEnableGoButton();
+          }
+        } catch {
+          clearInterval(iv);
+          cardData[idx] = { ...cardData[idx], status: 'info-error', error: 'Lost connection to server' };
+          renderCard(idx);
+          checkEnableGoButton();
+        }
+      }, 1000);
     }
 
     function renderCard(idx) {
@@ -536,7 +578,7 @@
       }
 
       // Loading skeleton
-      if (c.status === 'loading') {
+      if (c.status === 'loading' || c.status === 'fetching_info') {
         el.className = 'card';
         el.innerHTML = `
           <div class="card-thumb loading"></div>
