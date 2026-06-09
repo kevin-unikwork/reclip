@@ -368,6 +368,48 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/cookies/update", methods=["POST"])
+def update_cookies():
+    data = request.json or {}
+    token = data.get("token", "").strip()
+    cookies_content = data.get("cookies", "").strip()
+    platform = data.get("platform", "youtube").strip()
+
+    expected_token = os.environ.get("COOKIES_SYNC_TOKEN")
+    if expected_token and token != expected_token:
+        return jsonify({"error": "Unauthorized: Invalid token"}), 401
+
+    if not cookies_content:
+        return jsonify({"error": "No cookies content provided"}), 400
+
+    if platform not in ("youtube", "instagram", "facebook"):
+        return jsonify({"error": "Invalid platform"}), 400
+
+    lines = cookies_content.split("\n")
+    formatted_lines = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            formatted_lines.append(line)
+            continue
+        if "\t" not in line:
+            parts = line.split()
+            if len(parts) >= 7:
+                line = "\t".join(parts[:6]) + "\t" + " ".join(parts[6:])
+        formatted_lines.append(line)
+    repaired_content = "\n".join(formatted_lines) + "\n"
+
+    filename = f"{platform}.txt"
+    filepath = os.path.join(COOKIES_DIR, filename)
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(repaired_content)
+        return jsonify({"status": "success", "message": f"Successfully updated {platform} cookies!"})
+    except Exception as e:
+        return jsonify({"error": f"Failed to save cookies: {str(e)}"}), 500
+
+
+
 def run_fetch_info(job_id, url):
     job = jobs[job_id]
     platform = get_platform(url)
