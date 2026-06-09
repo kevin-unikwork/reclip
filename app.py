@@ -22,18 +22,45 @@ def init_cookies_from_env():
     youtube_cookies_env = os.environ.get("YTDLP_YOUTUBE_COOKIES")
     if youtube_cookies_env:
         try:
+            lines = youtube_cookies_env.strip().split("\n")
+            formatted_lines = []
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    formatted_lines.append(line)
+                    continue
+                if "\t" not in line:
+                    parts = line.split()
+                    if len(parts) >= 7:
+                        # Rejoin fields 1-6 with tabs, and join remaining fields as the 7th value field
+                        line = "\t".join(parts[:6]) + "\t" + " ".join(parts[6:])
+                formatted_lines.append(line)
+            content = "\n".join(formatted_lines) + "\n"
             with open(os.path.join(COOKIES_DIR, "youtube.txt"), "w", encoding="utf-8") as f:
-                f.write(youtube_cookies_env.strip() + "\n")
-            print(f"Successfully wrote cookies/youtube.txt ({len(youtube_cookies_env)} bytes)")
+                f.write(content)
+            print(f"Successfully wrote cookies/youtube.txt ({len(content)} bytes)")
         except Exception as e:
             print(f"Error writing youtube cookies: {e}")
 
     instagram_cookies_env = os.environ.get("YTDLP_INSTAGRAM_COOKIES")
     if instagram_cookies_env:
         try:
+            lines = instagram_cookies_env.strip().split("\n")
+            formatted_lines = []
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    formatted_lines.append(line)
+                    continue
+                if "\t" not in line:
+                    parts = line.split()
+                    if len(parts) >= 7:
+                        line = "\t".join(parts[:6]) + "\t" + " ".join(parts[6:])
+                formatted_lines.append(line)
+            content = "\n".join(formatted_lines) + "\n"
             with open(os.path.join(COOKIES_DIR, "instagram.txt"), "w", encoding="utf-8") as f:
-                f.write(instagram_cookies_env.strip() + "\n")
-            print(f"Successfully wrote cookies/instagram.txt ({len(instagram_cookies_env)} bytes)")
+                f.write(content)
+            print(f"Successfully wrote cookies/instagram.txt ({len(content)} bytes)")
         except Exception as e:
             print(f"Error writing instagram cookies: {e}")
 
