@@ -411,16 +411,22 @@ def debug_env():
     test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     cmd = build_yt_dlp_cmd(test_url, "-j", test_url)
     test_result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    # Also test without cookies to isolate stale cookie issues
+    cmd_no_cookies = [x for i, x in enumerate(cmd) if x != "--cookies" and (i == 0 or cmd[i-1] != "--cookies")]
+    test_no_cookies = subprocess.run(cmd_no_cookies, capture_output=True, text=True, timeout=30)
+    cookie_file = get_cookies_file(test_url)
     return jsonify({
         "yt_dlp_path": ytdlp,
         "yt_dlp_version": version_result.stdout.strip(),
         "node_path": node,
         "bgutil_pot_url": os.environ.get("BGUTIL_POT_URL"),
         "render_env": bool(os.environ.get("RENDER")),
-        "cmd": cmd,
-        "test_stderr": test_result.stderr[-2000:] if test_result.stderr else "",
-        "test_returncode": test_result.returncode,
-        "plugins": subprocess.run([ytdlp, "--list-plugins"], capture_output=True, text=True, timeout=10).stdout.strip(),
+        "cookie_file_used": cookie_file,
+        "cookie_file_exists": os.path.exists(cookie_file) if cookie_file else False,
+        "test_with_cookies_returncode": test_result.returncode,
+        "test_with_cookies_stderr": test_result.stderr[-1000:] if test_result.stderr else "",
+        "test_no_cookies_returncode": test_no_cookies.returncode,
+        "test_no_cookies_stderr": test_no_cookies.stderr[-1000:] if test_no_cookies.stderr else "",
     })
 
 
@@ -468,6 +474,26 @@ def update_cookies():
         return jsonify({"status": "success", "message": f"Successfully updated {platform} cookies!"})
     except Exception as e:
         return jsonify({"error": f"Failed to save cookies: {str(e)}"}), 500
+
+
+@app.route("/api/cookies/delete", methods=["POST"])
+def delete_cookies():
+    data = request.json or {}
+    token = data.get("token", "").strip()
+    platform = data.get("platform", "youtube").strip()
+
+    expected_token = os.environ.get("COOKIES_SYNC_TOKEN")
+    if expected_token and token != expected_token:
+        return jsonify({"error": "Unauthorized: Invalid token"}), 401
+
+    if platform not in ("youtube", "instagram", "facebook"):
+        return jsonify({"error": "Invalid platform"}), 400
+
+    filepath = os.path.join(COOKIES_DIR, f"{platform}.txt")
+    if os.path.exists(filepath):
+        os.remove(filepath)
+        return jsonify({"status": "success", "message": f"Deleted {platform} cookies"})
+    return jsonify({"status": "not_found", "message": f"No {platform} cookie file found"})
 
 
 
