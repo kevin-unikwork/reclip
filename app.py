@@ -188,6 +188,18 @@ def get_ytdlp_executable():
     # Fallback to "yt-dlp"
     return "yt-dlp"
 
+YTDLP_HELP_TEXT = None
+
+def ytdlp_supports_option(option):
+    global YTDLP_HELP_TEXT
+    if YTDLP_HELP_TEXT is None:
+        try:
+            result = subprocess.run([get_ytdlp_executable(), "--help"], capture_output=True, text=True, timeout=15)
+            YTDLP_HELP_TEXT = (result.stdout or "") + "\n" + (result.stderr or "")
+        except Exception:
+            YTDLP_HELP_TEXT = ""
+    return option in YTDLP_HELP_TEXT
+
 
 def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
     cmd = [
@@ -237,7 +249,12 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
 
         js_path = os.environ.get("YTDLP_JS_PATH") or shutil.which("node")
         if js_path:
-            cmd += ["--js-path", js_path]
+            if ytdlp_supports_option("--js-path"):
+                cmd += ["--js-path", js_path]
+            elif ytdlp_supports_option("--js-use-native"):
+                cmd += ["--js-use-native"]
+            elif os.environ.get("YTDLP_DEBUG") == "1":
+                print("[debug] yt-dlp does not support --js-path or --js-use-native, skipping JS runtime flags")
 
     if cookies_file and (is_cloud or use_fallback or os.environ.get("YTDLP_COOKIES_FILE")):
         cmd += ["--cookies", cookies_file]
