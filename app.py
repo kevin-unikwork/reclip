@@ -214,9 +214,12 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
     is_cloud = os.environ.get("RENDER") or proxy
 
     if platform == "youtube":
+        pot_url = os.environ.get("BGUTIL_POT_URL", "http://localhost:4416")
         cmd += [
             "--extractor-args",
             "youtube:player_client=default,-android_sdkless",
+            "--extractor-args",
+            f"youtubepot-bgutilhttp:base_url={pot_url}",
         ]
 
     if cookies_file and (is_cloud or use_fallback or os.environ.get("YTDLP_COOKIES_FILE")):
@@ -537,5 +540,5 @@ def download_file(job_id):
     return send_file(job["file"], as_attachment=True, download_name=job["filename"])
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", 3000))
     app.run(host="0.0.0.0", port=port)

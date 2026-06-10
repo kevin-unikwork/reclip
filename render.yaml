@@ -6,3 +6,11 @@ services:
     envVars:
       - key: PORT
         value: 8000
+      - key: BGUTIL_POT_URL
+        value: http://bgutil-pot-provider:4416
+
+  - type: pserv
+    name: bgutil-pot-provider
+    runtime: image
+    image:
+      url: docker.io/brainicism/bgutil-ytdlp-pot-provider:latest
