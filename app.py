@@ -242,7 +242,7 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
 
         cmd += [
             "--extractor-args",
-            "youtube:player_client=web,web_safari",
+            "youtube:player_client=tv_embedded,web",
             "--extractor-args",
             f"youtubepot-bgutilhttp:base_url={pot_url}",
         ]
@@ -423,7 +423,8 @@ def debug_env():
     except Exception as e:
         bgutil_ping = str(e)
     try:
-        bgutil_pot = req.post(f"{pot_url}/get_pot", json={"visitor_data": ""}, timeout=10).json()
+        r = req.post(f"{pot_url}/get_pot", json={"content_binding": "test"}, timeout=10)
+        bgutil_pot = r.json()
     except Exception as e:
         bgutil_pot = str(e)
     return jsonify({
