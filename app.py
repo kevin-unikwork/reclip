@@ -190,7 +190,7 @@ def get_ytdlp_executable():
 
 YTDLP_HELP_TEXT = None
 
-def ytdlp_supports_option(option):
+def ytdlp_supports_option(option): 
     global YTDLP_HELP_TEXT
     if YTDLP_HELP_TEXT is None:
         try:
@@ -596,6 +596,29 @@ def download_file(job_id):
     if not job or job["status"] != "done":
         return jsonify({"error": "File not ready"}), 404
     return send_file(job["file"], as_attachment=True, download_name=job["filename"])
+
+def _keep_alive():
+    import requests as req
+    self_url = os.environ.get("RENDER_EXTERNAL_URL")
+    bgutil_public_url = os.environ.get("BGUTIL_PUBLIC_URL")  # e.g. https://bgutil-pot-provider.onrender.com
+    if not self_url and not bgutil_public_url:
+        return
+    while True:
+        time.sleep(840)  # every 14 minutes — Render spins down after 15 min
+        if self_url:
+            try:
+                req.get(f"{self_url}/", timeout=10)
+            except Exception:
+                pass
+        if bgutil_public_url:
+            try:
+                req.get(f"{bgutil_public_url.rstrip('/')}/ping", timeout=10)
+            except Exception:
+                pass
+
+if os.environ.get("RENDER"):
+    t = threading.Thread(target=_keep_alive, daemon=True)
+    t.start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3000))
