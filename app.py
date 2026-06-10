@@ -420,6 +420,7 @@ def debug_env():
         "cmd": cmd,
         "test_stderr": test_result.stderr[-2000:] if test_result.stderr else "",
         "test_returncode": test_result.returncode,
+        "plugins": subprocess.run([ytdlp, "--list-plugins"], capture_output=True, text=True, timeout=10).stdout.strip(),
     })
 
 
