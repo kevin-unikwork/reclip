@@ -249,12 +249,10 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
 
         js_path = os.environ.get("YTDLP_JS_PATH") or shutil.which("node")
         if js_path:
-            if ytdlp_supports_option("--js-path"):
+            if ytdlp_supports_option("--js-runtimes"):
+                cmd += ["--js-runtimes", f"node:{js_path}"]
+            elif ytdlp_supports_option("--js-path"):
                 cmd += ["--js-path", js_path]
-            elif ytdlp_supports_option("--js-use-native"):
-                cmd += ["--js-use-native"]
-            elif os.environ.get("YTDLP_DEBUG") == "1":
-                print("[debug] yt-dlp does not support --js-path or --js-use-native, skipping JS runtime flags")
 
     if cookies_file and (is_cloud or use_fallback or os.environ.get("YTDLP_COOKIES_FILE")):
         cmd += ["--cookies", cookies_file]
