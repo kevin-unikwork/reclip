@@ -112,14 +112,14 @@ def refresh_cookies_from_gist():
 jobs = {}
 info_cache = {}
 INFO_CACHE_TTL = 3600
-INFO_TO_DOWNLOAD_GAP_SECONDS = 8
+INFO_TO_DOWNLOAD_GAP_SECONDS = 2
 PLATFORM_LOCKS = {
     "youtube": threading.Semaphore(1),
     "instagram": threading.Semaphore(1),
 }
 PLATFORM_MIN_INTERVALS = {
-    "youtube": 10,
-    "instagram": 5,
+    "youtube": 3,
+    "instagram": 2,
 }
 platform_last_request = {}
 platform_last_request_lock = threading.Lock()
@@ -194,8 +194,6 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
     cmd = [
         get_ytdlp_executable(),
         "--no-playlist",
-        "--js-runtimes", "node",
-        "--remote-components", "ejs:github",
         "-N", "5",
         "--http-chunk-size", "10M",
         "--user-agent",
