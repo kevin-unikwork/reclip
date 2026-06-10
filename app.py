@@ -8,7 +8,7 @@ import time
 import shutil
 import sys
 from urllib.parse import urlparse
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template # type: ignore
 
 app = Flask(__name__)
 BASE_DIR = os.path.dirname(__file__)
