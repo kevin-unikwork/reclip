@@ -405,6 +405,28 @@ def run_download(job_id, url, format_choice, format_id):
             platform_lock.release()
 
 
+@app.route("/api/debug")
+def debug_env():
+    import subprocess, shutil
+    ytdlp = get_ytdlp_executable()
+    node = shutil.which("node")
+    version_result = subprocess.run([ytdlp, "--version"], capture_output=True, text=True, timeout=10)
+    # Test n-challenge with a known YouTube URL
+    test_result = subprocess.run(
+        [ytdlp, "--no-playlist", "-j", "--no-download", "https://www.youtube.com/watch?v=dQw4w9WgXcQ"],
+        capture_output=True, text=True, timeout=30
+    )
+    return jsonify({
+        "yt_dlp_path": ytdlp,
+        "yt_dlp_version": version_result.stdout.strip(),
+        "node_path": node,
+        "bgutil_pot_url": os.environ.get("BGUTIL_POT_URL"),
+        "render_env": bool(os.environ.get("RENDER")),
+        "test_stderr": test_result.stderr[-2000:] if test_result.stderr else "",
+        "test_returncode": test_result.returncode,
+    })
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
