@@ -543,17 +543,19 @@ def run_fetch_info(job_id, url):
 
         best_by_height = {}
         for f in info.get("formats", []):
-            height = f.get("height")
-            if height and f.get("vcodec", "none") != "none":
-                tbr = f.get("tbr") or 0
-                if height not in best_by_height or tbr > (best_by_height[height].get("tbr") or 0):
-                    best_by_height[height] = f
+            if f.get("vcodec", "none") == "none":
+                continue
+            height = f.get("height") or 0
+            tbr = f.get("tbr") or 0
+            if height not in best_by_height or tbr > (best_by_height[height].get("tbr") or 0):
+                best_by_height[height] = f
 
         formats = []
         for height, f in best_by_height.items():
+            label = f"{height}p" if height else "Best"
             formats.append({
                 "id": f["format_id"],
-                "label": f"{height}p",
+                "label": label,
                 "height": height,
             })
         formats.sort(key=lambda x: x["height"], reverse=True)
