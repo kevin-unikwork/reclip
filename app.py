@@ -108,7 +108,6 @@ def refresh_cookies_from_gist():
     except Exception as e:
         print(f"Error fetching cookies from Gist: {e}")
 
-
 jobs = {}
 info_cache = {}
 INFO_CACHE_TTL = 3600
@@ -239,6 +238,11 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
     if cookies_file and (is_cloud or use_fallback or os.environ.get("YTDLP_COOKIES_FILE")):
         cmd += ["--cookies", cookies_file]
     cmd += list(extra_args)
+
+    if os.environ.get("YTDLP_DEBUG") == "1":
+        print(f"[debug] BGUTIL_POT_URL={pot_url}")
+        print("[debug] yt-dlp cmd:", " ".join(cmd))
+
     return cmd
 
 
