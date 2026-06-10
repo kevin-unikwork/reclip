@@ -10,3 +10,4 @@ assets/*.mov
 .env.development
 cookies/
 *.mp4
+git_doc.txt
