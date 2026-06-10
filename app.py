@@ -410,22 +410,33 @@ def debug_env():
     version_result = subprocess.run([ytdlp, "--version"], capture_output=True, text=True, timeout=10)
     test_url = request.args.get("url", "https://www.youtube.com/shorts/D1WF4zPZa9I")
     cmd = build_yt_dlp_cmd(test_url, "-j", test_url)
-    test_result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     # Also test without cookies to isolate stale cookie issues
     cmd_no_cookies = [x for i, x in enumerate(cmd) if x != "--cookies" and (i == 0 or cmd[i-1] != "--cookies")]
     test_no_cookies = subprocess.run(cmd_no_cookies, capture_output=True, text=True, timeout=30)
     cookie_file = get_cookies_file(test_url)
+    # Test if bgutil is reachable from inside the container
+    import requests as req
+    pot_url = os.environ.get("BGUTIL_POT_URL", "").rstrip("/")
+    try:
+        bgutil_ping = req.get(f"{pot_url}/ping", timeout=5).json()
+    except Exception as e:
+        bgutil_ping = str(e)
+    try:
+        bgutil_pot = req.post(f"{pot_url}/get_pot", json={"visitor_data": ""}, timeout=10).json()
+    except Exception as e:
+        bgutil_pot = str(e)
     return jsonify({
         "yt_dlp_path": ytdlp,
         "yt_dlp_version": version_result.stdout.strip(),
         "node_path": node,
-        "bgutil_pot_url": os.environ.get("BGUTIL_POT_URL"),
+        "bgutil_pot_url": pot_url,
+        "bgutil_ping": bgutil_ping,
+        "bgutil_pot_works": isinstance(bgutil_pot, dict) and "poToken" in bgutil_pot,
         "render_env": bool(os.environ.get("RENDER")),
         "cookie_file_used": cookie_file,
         "cookie_file_exists": os.path.exists(cookie_file) if cookie_file else False,
+        "cmd": cmd,
         "test_url": test_url,
-        "test_with_cookies_returncode": test_result.returncode,
-        "test_with_cookies_stderr": test_result.stderr[-2000:] if test_result.stderr else "",
         "test_no_cookies_returncode": test_no_cookies.returncode,
         "test_no_cookies_stderr": test_no_cookies.stderr[-2000:] if test_no_cookies.stderr else "",
     })
