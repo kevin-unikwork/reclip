@@ -8,7 +8,7 @@ import time
 import shutil
 import sys
 from urllib.parse import urlparse
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file, render_template # type: ignore
 
 app = Flask(__name__)
 BASE_DIR = os.path.dirname(__file__)
@@ -107,7 +107,6 @@ def refresh_cookies_from_gist():
             print(f"Successfully refreshed cookies from Gist ({len(repaired_content)} bytes)")
     except Exception as e:
         print(f"Error fetching cookies from Gist: {e}")
-
 
 jobs = {}
 info_cache = {}
@@ -239,6 +238,11 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
     if cookies_file and (is_cloud or use_fallback or os.environ.get("YTDLP_COOKIES_FILE")):
         cmd += ["--cookies", cookies_file]
     cmd += list(extra_args)
+
+    if os.environ.get("YTDLP_DEBUG") == "1":
+        print(f"[debug] BGUTIL_POT_URL={pot_url}")
+        print("[debug] yt-dlp cmd:", " ".join(cmd))
+
     return cmd
 
 
