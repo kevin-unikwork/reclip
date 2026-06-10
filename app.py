@@ -212,7 +212,23 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
     is_cloud = os.environ.get("RENDER") or proxy
 
     if platform == "youtube":
-        pot_url = os.environ.get("BGUTIL_POT_URL", "http://localhost:4416")
+        pot_url = None
+        for env_key in (
+            "BGUTIL_POT_PROVIDER_URL",
+            "YTDLP_POT_PROVIDER_URL",
+            "POT_PROVIDER_URL",
+            "BGUTIL_POT_URL",
+        ):
+            pot_url = os.environ.get(env_key)
+            if pot_url:
+                break
+        if not pot_url:
+            pot_url = "http://localhost:4416"
+
+        pot_url = pot_url.rstrip("/")
+        if pot_url.endswith("/ping"):
+            pot_url = pot_url[: -len("/ping")]
+
         cmd += [
             "--extractor-args",
             "youtube:player_client=default,-android_sdkless",
