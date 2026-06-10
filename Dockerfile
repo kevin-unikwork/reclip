@@ -13,8 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Install bgutil PO token provider plugin for yt-dlp
+# Install yt-dlp plugins: bgutil PO token provider + EJS challenge solver scripts
 RUN yt-dlp --install-plugin bgutil-ytdlp-pot-provider 2>/dev/null || true
+RUN yt-dlp --install-plugin ejs 2>/dev/null || true
 
 EXPOSE 8000
 # Auto-update yt-dlp to latest on every deploy — critical for YouTube support
