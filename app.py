@@ -237,9 +237,7 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
 
         js_path = os.environ.get("YTDLP_JS_PATH") or shutil.which("node")
         if js_path:
-            cmd += ["--js-use-native", "--js-path", js_path]
-        else:
-            cmd += ["--js-use-native"]
+            cmd += ["--js-path", js_path]
 
     if cookies_file and (is_cloud or use_fallback or os.environ.get("YTDLP_COOKIES_FILE")):
         cmd += ["--cookies", cookies_file]
