@@ -412,7 +412,8 @@ def debug_env():
     cmd = build_yt_dlp_cmd(test_url, "-j", test_url)
     # Also test without cookies to isolate stale cookie issues
     cmd_no_cookies = [x for i, x in enumerate(cmd) if x != "--cookies" and (i == 0 or cmd[i-1] != "--cookies")]
-    test_no_cookies = subprocess.run(cmd_no_cookies, capture_output=True, text=True, timeout=30)
+    cmd_no_cookies_verbose = cmd_no_cookies + ["-v"]
+    test_no_cookies = subprocess.run(cmd_no_cookies_verbose, capture_output=True, text=True, timeout=60)
     cookie_file = get_cookies_file(test_url)
     # Test if bgutil is reachable from inside the container
     import requests as req
