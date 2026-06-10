@@ -242,7 +242,7 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
 
         cmd += [
             "--extractor-args",
-            "youtube:player_client=ios,web",
+            "youtube:player_client=default",
             "--extractor-args",
             f"youtubepot-bgutilhttp:base_url={pot_url}",
         ]
@@ -545,17 +545,18 @@ def run_fetch_info(job_id, url):
         for f in info.get("formats", []):
             if f.get("vcodec", "none") == "none":
                 continue
-            height = f.get("height") or 0
+            height = f.get("height")
+            if not height:
+                continue
             tbr = f.get("tbr") or 0
             if height not in best_by_height or tbr > (best_by_height[height].get("tbr") or 0):
                 best_by_height[height] = f
 
         formats = []
         for height, f in best_by_height.items():
-            label = f"{height}p" if height else "Best"
             formats.append({
                 "id": f["format_id"],
-                "label": label,
+                "label": f"{height}p",
                 "height": height,
             })
         formats.sort(key=lambda x: x["height"], reverse=True)
