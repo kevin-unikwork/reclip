@@ -408,7 +408,7 @@ def debug_env():
     ytdlp = get_ytdlp_executable()
     node = shutil.which("node")
     version_result = subprocess.run([ytdlp, "--version"], capture_output=True, text=True, timeout=10)
-    test_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    test_url = request.args.get("url", "https://www.youtube.com/shorts/D1WF4zPZa9I")
     cmd = build_yt_dlp_cmd(test_url, "-j", test_url)
     test_result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     # Also test without cookies to isolate stale cookie issues
@@ -423,10 +423,11 @@ def debug_env():
         "render_env": bool(os.environ.get("RENDER")),
         "cookie_file_used": cookie_file,
         "cookie_file_exists": os.path.exists(cookie_file) if cookie_file else False,
+        "test_url": test_url,
         "test_with_cookies_returncode": test_result.returncode,
-        "test_with_cookies_stderr": test_result.stderr[-1000:] if test_result.stderr else "",
+        "test_with_cookies_stderr": test_result.stderr[-2000:] if test_result.stderr else "",
         "test_no_cookies_returncode": test_no_cookies.returncode,
-        "test_no_cookies_stderr": test_no_cookies.stderr[-1000:] if test_no_cookies.stderr else "",
+        "test_no_cookies_stderr": test_no_cookies.stderr[-2000:] if test_no_cookies.stderr else "",
     })
 
 
