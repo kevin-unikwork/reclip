@@ -1,3 +1,7 @@
+# ReClip — self-hosted video downloader backend
+# Flask app that wraps yt-dlp. All downloads run as background threads;
+# the frontend polls /api/status/<job_id> until done.
+
 import os
 import uuid
 import glob
@@ -18,6 +22,15 @@ os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 os.makedirs(COOKIES_DIR, exist_ok=True)
 
 
+# ---------------------------------------------------------------------------
+# Cookie initialisation
+# On Render, cookies can't persist across deploys via files — so we write them
+# from env vars at startup. YTDLP_YOUTUBE_COOKIES / YTDLP_INSTAGRAM_COOKIES
+# should contain raw Netscape-format cookie content.
+# Space-to-tab repair handles cookies exported by some browser extensions that
+# use spaces instead of the required tab delimiters.
+# ---------------------------------------------------------------------------
+
 def init_cookies_from_env():
     youtube_cookies_env = os.environ.get("YTDLP_YOUTUBE_COOKIES")
     if youtube_cookies_env:
@@ -32,7 +45,6 @@ def init_cookies_from_env():
                 if "\t" not in line:
                     parts = line.split()
                     if len(parts) >= 7:
-                        # Rejoin fields 1-6 with tabs, and join remaining fields as the 7th value field
                         line = "\t".join(parts[:6]) + "\t" + " ".join(parts[6:])
                 formatted_lines.append(line)
             content = "\n".join(formatted_lines) + "\n"
@@ -67,9 +79,16 @@ def init_cookies_from_env():
 
 init_cookies_from_env()
 
-GIST_CACHE_TTL = 300  # 5 minutes cache
+GIST_CACHE_TTL = 300  # re-fetch Gist at most once every 5 minutes
 last_gist_fetch = 0
 
+
+# ---------------------------------------------------------------------------
+# Gist-based cookie refresh
+# Alternative to env vars: store cookies in a private GitHub Gist and set
+# YTDLP_COOKIES_GIST_URL to the raw content URL. The app fetches and overwrites
+# cookies/youtube.txt at most once per GIST_CACHE_TTL seconds.
+# ---------------------------------------------------------------------------
 
 def refresh_cookies_from_gist():
     global last_gist_fetch
@@ -86,7 +105,6 @@ def refresh_cookies_from_gist():
         r = requests.get(gist_url, timeout=10)
         if r.status_code == 200:
             content = r.text.strip()
-            # Apply space-to-tab auto-repair
             lines = content.split("\n")
             formatted_lines = []
             for line in lines:
@@ -108,16 +126,24 @@ def refresh_cookies_from_gist():
     except Exception as e:
         print(f"Error fetching cookies from Gist: {e}")
 
+
+# ---------------------------------------------------------------------------
+# In-memory job store and rate-limiting config
+# jobs dict maps job_id → {status, url, file, error, ...}
+# PLATFORM_LOCKS limits concurrent yt-dlp processes per platform to avoid bans.
+# PLATFORM_MIN_INTERVALS enforces a minimum gap between requests per platform.
+# ---------------------------------------------------------------------------
+
 jobs = {}
 info_cache = {}
-INFO_CACHE_TTL = 3600
-INFO_TO_DOWNLOAD_GAP_SECONDS = 2
+INFO_CACHE_TTL = 3600  # cache video metadata for 1 hour
+INFO_TO_DOWNLOAD_GAP_SECONDS = 2  # wait between info fetch and download start
 PLATFORM_LOCKS = {
     "youtube": threading.Semaphore(1),
     "instagram": threading.Semaphore(1),
 }
 PLATFORM_MIN_INTERVALS = {
-    "youtube": 3,
+    "youtube": 3,   # seconds between YouTube requests
     "instagram": 2,
 }
 platform_last_request = {}
@@ -140,7 +166,7 @@ def get_platform(url):
 
 
 def get_cookies_file(url):
-    # Try refreshing from Gist if URL is configured
+    # Refresh from Gist first if configured
     if get_platform(url) == "youtube" and os.environ.get("YTDLP_COOKIES_GIST_URL"):
         refresh_cookies_from_gist()
 
@@ -173,24 +199,25 @@ def get_cookies_file(url):
 
 
 def get_ytdlp_executable():
-    # 1. Try finding in standard PATH
+    # 1. Standard PATH
     path_executable = shutil.which("yt-dlp")
     if path_executable:
         return path_executable
 
-    # 2. Try looking in the same directory as the running Python interpreter (e.g. inside venv/Scripts)
+    # 2. Same directory as the running Python interpreter (inside venv/Scripts)
     python_dir = os.path.dirname(sys.executable)
     for ext in ("", ".exe"):
         candidate = os.path.join(python_dir, f"yt-dlp{ext}")
         if os.path.exists(candidate):
             return candidate
 
-    # Fallback to "yt-dlp"
     return "yt-dlp"
 
+
+# Cache yt-dlp --help output so we only run it once per process lifetime
 YTDLP_HELP_TEXT = None
 
-def ytdlp_supports_option(option): 
+def ytdlp_supports_option(option):
     global YTDLP_HELP_TEXT
     if YTDLP_HELP_TEXT is None:
         try:
@@ -201,18 +228,33 @@ def ytdlp_supports_option(option):
     return option in YTDLP_HELP_TEXT
 
 
+# ---------------------------------------------------------------------------
+# yt-dlp command builder
+# Constructs the full yt-dlp CLI command for a given URL.
+#
+# YouTube-specific additions:
+#   - bgutil PO token provider: required for downloads from datacenter IPs.
+#     YouTube's "GVS PO Token" experiment blocks unauthenticated datacenter
+#     requests; the bgutil sidecar service generates the required proof token.
+#   - --js-runtimes node: required for n-parameter and signature challenge
+#     solving. Node 22+ is mandatory — older versions are silently rejected.
+#
+# Cookies are only sent in cloud/proxy mode to avoid triggering YouTube's
+# cookie-rotation detection on local runs.
+# ---------------------------------------------------------------------------
+
 def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
     cmd = [
         get_ytdlp_executable(),
         "--no-playlist",
-        "-N", "5",
-        "--http-chunk-size", "10M",
+        "-N", "5",                  # 5 parallel fragment download threads
+        "--http-chunk-size", "10M", # 10MB chunks for faster CDN downloads
         "--user-agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
     ]
 
-    # Optional residential proxy — set YTDLP_PROXY env var on Render to route
-    # YouTube requests through a non-datacenter IP (e.g. socks5://user:pass@host:port)
+    # Residential proxy — routes YouTube requests through a non-datacenter IP.
+    # Set YTDLP_PROXY to e.g. socks5://user:pass@host:port to bypass IP bans.
     proxy = os.environ.get("YTDLP_PROXY")
     if proxy:
         cmd += ["--proxy", proxy]
@@ -223,6 +265,7 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
     is_cloud = os.environ.get("RENDER") or proxy
 
     if platform == "youtube":
+        # Resolve bgutil PO token provider URL from any of several env var names
         pot_url = None
         for env_key in (
             "BGUTIL_POT_PROVIDER_URL",
@@ -247,6 +290,9 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
             f"youtubepot-bgutilhttp:base_url={pot_url}",
         ]
 
+        # Pass Node.js path explicitly — yt-dlp 2026.06+ no longer auto-detects
+        # Node; only Deno is enabled by default. Without this, n-challenge and
+        # signature solving fail and some formats are missing.
         js_path = os.environ.get("YTDLP_JS_PATH") or shutil.which("node")
         if js_path:
             if ytdlp_supports_option("--js-runtimes"):
@@ -282,13 +328,15 @@ def wait_for_platform_cooldown(platform):
 
 
 def run_yt_dlp_with_retries(cmd, timeout, platform, max_attempts=None):
+    # Only retry on YouTube and only for rate-limit errors (HTTP 429).
+    # Other errors (bot detection, unavailable video) are not retryable.
     if max_attempts is None:
         max_attempts = 3 if platform == "youtube" else 1
     last_result = None
 
     for attempt in range(max_attempts):
         if attempt > 0:
-            backoff_seconds = 10 * (2 ** (attempt - 1))
+            backoff_seconds = 10 * (2 ** (attempt - 1))  # 10s, 20s, ...
             time.sleep(backoff_seconds)
             wait_for_platform_cooldown(platform)
 
@@ -306,6 +354,8 @@ def run_yt_dlp_with_retries(cmd, timeout, platform, max_attempts=None):
 
 
 def wait_after_recent_info_fetch(url):
+    # Small gap between the info fetch and the download start to avoid YouTube
+    # treating back-to-back requests as suspicious bot behaviour.
     cached = info_cache.get(url)
     if not cached:
         return
@@ -319,6 +369,10 @@ def wait_after_recent_info_fetch(url):
     if wait_time > 0:
         time.sleep(wait_time)
 
+
+# ---------------------------------------------------------------------------
+# Download job runner (runs in a background thread)
+# ---------------------------------------------------------------------------
 
 def run_download(job_id, url, format_choice, format_id):
     job = jobs[job_id]
@@ -346,7 +400,8 @@ def run_download(job_id, url, format_choice, format_id):
         result = run_yt_dlp_with_retries(cmd, timeout=300, platform=platform)
         is_cloud = os.environ.get("RENDER") or os.environ.get("YTDLP_PROXY")
         if result.returncode != 0 and not is_cloud:
-            # Try fallback run
+            # Local fallback: retry with cookies enabled in case the first
+            # attempt failed due to missing authentication
             cmd_fallback = build_yt_dlp_cmd(url, "-o", out_template, use_fallback=True)
             if format_choice == "audio":
                 cmd_fallback += ["-x", "--audio-format", "mp3"]
@@ -386,7 +441,6 @@ def run_download(job_id, url, format_choice, format_id):
         job["file"] = chosen
         ext = os.path.splitext(chosen)[1]
         title = job.get("title", "").strip()
-        # Sanitize title for filename
         if title:
             safe_title = "".join(c for c in title if c not in r'\/:*?"<>|').strip()[:20].strip()
             job["filename"] = f"{safe_title}{ext}" if safe_title else os.path.basename(chosen)
@@ -403,19 +457,23 @@ def run_download(job_id, url, format_choice, format_id):
             platform_lock.release()
 
 
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
 @app.route("/api/debug")
 def debug_env():
+    """Inspect runtime environment. Useful for diagnosing yt-dlp and bgutil issues.
+    Optional ?url= param to test against a specific video URL."""
     ytdlp = get_ytdlp_executable()
     node = shutil.which("node")
     version_result = subprocess.run([ytdlp, "--version"], capture_output=True, text=True, timeout=10)
     test_url = request.args.get("url", "https://www.youtube.com/shorts/D1WF4zPZa9I")
     cmd = build_yt_dlp_cmd(test_url, "-j", test_url)
-    # Also test without cookies to isolate stale cookie issues
     cmd_no_cookies = [x for i, x in enumerate(cmd) if x != "--cookies" and (i == 0 or cmd[i-1] != "--cookies")]
     cmd_no_cookies_verbose = cmd_no_cookies + ["-v"]
     test_no_cookies = subprocess.run(cmd_no_cookies_verbose, capture_output=True, text=True, timeout=60)
     cookie_file = get_cookies_file(test_url)
-    # Test if bgutil is reachable from inside the container
     import requests as req
     pot_url = os.environ.get("BGUTIL_POT_URL", "").rstrip("/")
     try:
@@ -451,6 +509,8 @@ def index():
 
 @app.route("/api/cookies/update", methods=["POST"])
 def update_cookies():
+    """Upload Netscape-format cookies for a platform without redeploying.
+    Body: { platform, cookies, token (optional) }"""
     data = request.json or {}
     token = data.get("token", "").strip()
     cookies_content = data.get("cookies", "").strip()
@@ -492,6 +552,8 @@ def update_cookies():
 
 @app.route("/api/cookies/delete", methods=["POST"])
 def delete_cookies():
+    """Delete a saved cookie file for a platform.
+    Body: { platform, token (optional) }"""
     data = request.json or {}
     token = data.get("token", "").strip()
     platform = data.get("platform", "youtube").strip()
@@ -510,8 +572,8 @@ def delete_cookies():
     return jsonify({"status": "not_found", "message": f"No {platform} cookie file found"})
 
 
-
 def run_fetch_info(job_id, url):
+    """Background thread: fetch video metadata via yt-dlp -j and populate the job."""
     job = jobs[job_id]
     platform = get_platform(url)
     cmd = build_yt_dlp_cmd(url, "-j", url, use_fallback=False)
@@ -541,6 +603,9 @@ def run_fetch_info(job_id, url):
             job["error"] = "yt-dlp returned invalid metadata"
             return
 
+        # Keep only the best (highest tbr) format per resolution height.
+        # Formats without a height value are skipped — they are typically
+        # audio-only or storyboard streams not useful for the quality picker.
         best_by_height = {}
         for f in info.get("formats", []):
             if f.get("vcodec", "none") == "none":
@@ -569,7 +634,7 @@ def run_fetch_info(job_id, url):
             "formats": formats,
         }
         info_cache[url] = {"timestamp": time.time(), "data": response_data}
-        
+
         job["status"] = "info_ready"
         job["info"] = response_data
     except Exception as e:
@@ -579,6 +644,7 @@ def run_fetch_info(job_id, url):
 
 @app.route("/api/info", methods=["POST"])
 def get_info():
+    """Start an async info-fetch job. Returns job_id immediately; poll /api/status/<job_id>."""
     data = request.json
     url = data.get("url", "").strip()
     if not url:
@@ -601,10 +667,11 @@ def get_info():
 
 @app.route("/api/download", methods=["POST"])
 def start_download():
+    """Start an async download job. Returns job_id immediately; poll /api/status/<job_id>."""
     data = request.json
     url = data.get("url", "").strip()
-    format_choice = data.get("format", "video")
-    format_id = data.get("format_id")
+    format_choice = data.get("format", "video")  # "video" or "audio"
+    format_id = data.get("format_id")             # specific yt-dlp format id, or None for best
     title = data.get("title", "")
 
     if not url:
@@ -622,6 +689,7 @@ def start_download():
 
 @app.route("/api/status/<job_id>")
 def check_status(job_id):
+    """Poll job status. Status values: fetching_info, info_ready, downloading, done, error."""
     job = jobs.get(job_id)
     if not job:
         return jsonify({"error": "Job not found"}), 404
@@ -635,19 +703,27 @@ def check_status(job_id):
 
 @app.route("/api/file/<job_id>")
 def download_file(job_id):
+    """Stream the completed download file to the browser."""
     job = jobs.get(job_id)
     if not job or job["status"] != "done":
         return jsonify({"error": "File not ready"}), 404
     return send_file(job["file"], as_attachment=True, download_name=job["filename"])
 
+
+# ---------------------------------------------------------------------------
+# Keep-alive pings (Render free tier spins down after 15 min of inactivity)
+# Pings both this app and the bgutil sidecar every 14 minutes.
+# Only runs when RENDER env var is set (i.e. deployed on Render).
+# ---------------------------------------------------------------------------
+
 def _keep_alive():
     import requests as req
     self_url = os.environ.get("RENDER_EXTERNAL_URL")
-    bgutil_public_url = os.environ.get("BGUTIL_PUBLIC_URL")  # e.g. https://bgutil-pot-provider.onrender.com
+    bgutil_public_url = os.environ.get("BGUTIL_PUBLIC_URL")
     if not self_url and not bgutil_public_url:
         return
     while True:
-        time.sleep(840)  # every 14 minutes — Render spins down after 15 min
+        time.sleep(840)  # 14 minutes
         if self_url:
             try:
                 req.get(f"{self_url}/", timeout=10)
