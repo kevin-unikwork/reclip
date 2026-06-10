@@ -242,7 +242,7 @@ def build_yt_dlp_cmd(url, *extra_args, use_fallback=False):
 
         cmd += [
             "--extractor-args",
-            "youtube:player_client=tv_embedded,web",
+            "youtube:player_client=ios,web",
             "--extractor-args",
             f"youtubepot-bgutilhttp:base_url={pot_url}",
         ]
